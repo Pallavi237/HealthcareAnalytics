@@ -1,0 +1,385 @@
+library(dplyr)
+## Warning: package 'dplyr' was built under R version 3.2.5
+## 
+## Attaching package: 'dplyr'
+## The following objects are masked from 'package:stats':
+## 
+##     filter, lag
+## The following objects are masked from 'package:base':
+## 
+##     intersect, setdiff, setequal, union
+library(plotly)
+## Warning: package 'plotly' was built under R version 3.2.5
+## Loading required package: ggplot2
+## Warning: package 'ggplot2' was built under R version 3.2.5
+## 
+## Attaching package: 'plotly'
+## The following object is masked from 'package:ggplot2':
+## 
+##     last_plot
+## The following object is masked from 'package:graphics':
+## 
+##     layout
+library(ggplot2)
+library(Ecdat)
+## Warning: package 'Ecdat' was built under R version 3.2.5
+## Loading required package: Ecfun
+## Warning: package 'Ecfun' was built under R version 3.2.5
+## 
+## Attaching package: 'Ecfun'
+## The following object is masked from 'package:base':
+## 
+##     sign
+## 
+## Attaching package: 'Ecdat'
+## The following object is masked from 'package:datasets':
+## 
+##     Orange
+library(caTools)
+## Warning: package 'caTools' was built under R version 3.2.5
+library(mypackage)
+library(leaps)
+## Warning: package 'leaps' was built under R version 3.2.5
+library(ROCR)
+## Loading required package: gplots
+## Warning: package 'gplots' was built under R version 3.2.5
+## 
+## Attaching package: 'gplots'
+## The following object is masked from 'package:stats':
+## 
+##     lowess
+data("MedExp")
+changing the target numerical variable to a categorical variable
+
+MedExp$medCategory=ifelse(MedExp$med>median(MedExp$med),0,1)
+plotting a linear model with age, with polynomial degree of 3
+linearModel=lm(med^(1/5)~poly(age,degree = 3),data = MedExp[,-16])
+plot(linearModel)
+
+
+predictMed=predict(linearModel,data=MedExp[,-16],se=T)
+se.bands=cbind(predictMed$fit+2*predictMed$se,predictMed$fit-2*predictMed$se)
+plot(MedExp$age,MedExp$med^(1/5),col='darkgrey',xlab="Age",ylab="medical expense",main="regressor on Medical Expenses with Age")
+lines(MedExp$med^(1/5),MedExp$fit,lwd=2,col="blue")
+ non linearity with logistic regresion
+
+split=sample.split(MedExp$medCategory,SplitRatio = 0.4)
+MedExpTrain=MedExp[split==TRUE,]
+MedExpValid=MedExp[split==FALSE,]
+medPolyglm=glm(medCategory~poly(age,3),data=MedExpTrain,family=binomial)
+summary(medPolyglm)
+## 
+## Call:
+## glm(formula = medCategory ~ poly(age, 3), family = binomial, 
+##     data = MedExpTrain)
+## 
+## Deviance Residuals: 
+##      Min        1Q    Median        3Q       Max  
+## -1.37239  -1.16008   0.05853   1.04184   1.51095  
+## 
+## Coefficients:
+##                 Estimate Std. Error z value Pr(>|z|)    
+## (Intercept)    -0.003481   0.043344  -0.080   0.9360    
+## poly(age, 3)1 -19.650462   2.082956  -9.434   <2e-16 ***
+## poly(age, 3)2  -1.094184   2.057644  -0.532   0.5949    
+## poly(age, 3)3   5.273214   2.060662   2.559   0.0105 *  
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## (Dispersion parameter for binomial family taken to be 1)
+## 
+##     Null deviance: 3091.4  on 2229  degrees of freedom
+## Residual deviance: 2991.7  on 2226  degrees of freedom
+## AIC: 2999.7
+## 
+## Number of Fisher Scoring iterations: 4
+agelims=range(MedExp$age)
+age.grid=seq(from=agelims[1],to=agelims[2] )
+predictAge=predict(medPolyglm,newdata = list(age=age.grid),se=T)
+se.bands=predictAge$fit+cbind(medPolyglm=0,lower=-2*predictAge$se.fit,upper=2*predictAge$se.fit)
+se.bands[1:5,]
+##   medPolyglm       lower     upper
+## 1  0.3047174 -0.00766905 0.6171039
+## 2  0.3378246  0.06408619 0.6115630
+## 3  0.3662462  0.12660259 0.6058897
+## 4  0.3901376  0.17991890 0.6003563
+## 5  0.4096543  0.22405930 0.5952493
+prob.bands=exp(se.bands)/(1+exp(se.bands))
+matplot(age.grid,prob.bands,col='blue',lwd=c(2,1,1),lty=c(1,2,2),type="l",ylim=c(0.2,.7),xlab="age",ylab="predicted probabilities")
+ predictions on actual data calling our package for computing metrics using ROCR package for computing metrics
+
+predictActual=predict(medPolyglm,newdata = MedExpValid,type="response")
+confusionMetrics(MedExpValid$medCategory,predictActual,threshold = 0.5,k=1)
+##       AIC       BIC       TPR       TNR       FPR       FNR Precision 
+##   4479.20   4493.43      0.65      0.53      0.47      0.35      0.58 
+##       NPV  Accuracy  FMeasure       auc 
+##      0.60      0.59      0.61      0.63
+#creating the prrediction object from ROCR package
+predictionObject=prediction(predictActual,MedExpValid$medCategory)
+performanceObject=performance(predictionObject, "sens", "fpr")
+plot(performanceObject,colorize=T,print.cutoffs.at=seq(0,1,0.2),text.adj=c(2,1),main="ROC curve of the fit");
+ subset selection using leaps package
+
+medSubsets=regsubsets(medCategory~age+lc+idp+idp
+                      +fmde+physlim+ndisease+health+linc+
+                        +lfam+educdec+sex+child+black,
+                      data = MedExpTrain,nvmax = 17,method ="forward" )
+plot(medSubsets)
+
+
+summaryObject=summary(medSubsets)
+names(summaryObject)
+## [1] "which"  "rsq"    "rss"    "adjr2"  "cp"     "bic"    "outmat" "obj"
+summaryObject%>%plot_ly( y = cp,name="cp statistic",mode = 'markers+lines') %>%
+  add_trace(y = summaryObject$bic, name = 'BIC', mode = 'markers+lines')
+0
+5
+10
+15
+−200
+−150
+−100
+−50
+0
+50
+100
+150
+200
+cp
+cp statistic
+BIC
+model selections with lasso and ridge classifiers we pass inputs as a matrix model.matrix converts all the qualitative variables into dummy variables
+library(glmnet)
+## Warning: package 'glmnet' was built under R version 3.2.5
+## Loading required package: Matrix
+## Loading required package: foreach
+## Loaded glmnet 2.0-5
+independentVar=model.matrix(medCategory~.-med,data = MedExp)
+dependentVar=MedExp$medCategory
+alpha=0—-> ridge regression using L2 Norm alpha=1—-> Lasso regression using L1 Norm we will use lamdba parameter as tuning parameter with a grid of values grid values from 10 power 10 to -2 standardize=TRUE automatically dimensions are parameters*grid values for lamba
+
+Lgrid=10^seq(10,-2,length=100)
+ridgeModel=glmnet(independentVar,dependentVar,family = "binomial",lambda = Lgrid,alpha = 0)
+dim(coef(ridgeModel))
+## [1]  18 100
+interpreting when lambda is large coefficients will be as small as they can be when lambda is small coefficients will be close to normal logistic regression
+
+ridgeModel$lambda[100]
+## [1] 0.01
+coef(ridgeModel)[,100]
+##  (Intercept)  (Intercept)           lc       idpyes          lpi 
+##  1.572919227  0.000000000  0.115913140  0.277245120 -0.022439851 
+##         fmde   physlimyes     ndisease   healthgood   healthfair 
+##  0.021386312 -0.411878943 -0.039666546 -0.228495751 -0.543676642 
+##   healthpoor         linc         lfam      educdec          age 
+## -0.806899277 -0.116680657  0.165094793 -0.038210555 -0.005515176 
+##    sexfemale     childyes      blackno 
+## -0.332610504  0.458723728  0.667166400
+#l2 norm calculation
+sqrt(sum(coef(ridgeModel)[-(1:2),100])^2)
+## [1] 0.8405444
+#large lambda
+ridgeModel$lambda[10]
+## [1] 811130831
+coef(ridgeModel)[,10]
+##   (Intercept)   (Intercept)            lc        idpyes           lpi 
+##  5.617206e-10  0.000000e+00  4.690105e-11  1.047302e-10  5.267104e-12 
+##          fmde    physlimyes      ndisease    healthgood    healthfair 
+##  2.289141e-11 -1.890768e-10 -1.857434e-11 -7.730487e-11 -1.411085e-10 
+##    healthpoor          linc          lfam       educdec           age 
+## -2.807091e-10 -4.908004e-11  1.444518e-10 -1.487535e-11 -7.642356e-12 
+##     sexfemale      childyes       blackno 
+## -1.346602e-10  2.533067e-10  2.571303e-10
+#l2 norm calculation
+sqrt(sum(coef(ridgeModel)[-(1:2),10])^2)
+## [1] 7.835304e-11
+plotting the model
+
+plot.glmnet(ridgeModel)
+ predictions using train and validation using cross validation sample predictions on one model
+
+trainIndependentVar=model.matrix(medCategory~.-med,data = MedExpTrain)
+trainDependentVar=MedExpTrain$medCategory
+testIndependentVar=model.matrix(medCategory~.-med,data = MedExpValid)
+testDependentVar=MedExpValid$medCategory
+ridgeTrain=glmnet(trainIndependentVar,trainDependentVar,alpha = 0,lambda = Lgrid)
+predictTest=predict(ridgeTrain,s = 10,newx =testIndependentVar)
+confusionMetrics(target = testDependentVar,predicted =predictTest,threshold = 0.5,k = 16)
+##       AIC       BIC       TPR       TNR       FPR       FNR Precision 
+##   4592.06   4819.74      0.66      0.62      0.38      0.34      0.64 
+##       NPV  Accuracy  FMeasure       auc 
+##      0.65      0.64      0.65      0.70
+cross validation using ridge 10 fold cross validation by default
+
+cvRidgeDeviance=cv.glmnet(trainIndependentVar,trainDependentVar,family="binomial",
+                  alpha=0,nfolds = 10,type.measure="deviance")
+plot(cvRidgeDeviance)
+
+
+cvRidgeAuc=cv.glmnet(trainIndependentVar,trainDependentVar,family="binomial",
+                  alpha=0,nfolds = 10,type.measure="auc")
+plot(cvRidgeAuc)
+ getting the best statistics to compute the error
+
+bestLambda=cvRidgeAuc$lambda.min
+pedictCV=predict.cv.glmnet(cvRidgeAuc,s=bestLambda,
+                        newx = testIndependentVar,type = "response")
+confusionMetrics(target = testDependentVar,predicted =pedictCV,threshold = 0.3,k = 16)
+##       AIC       BIC       TPR       TNR       FPR       FNR Precision 
+##   4189.86   4417.53      0.94      0.23      0.77      0.06      0.55 
+##       NPV  Accuracy  FMeasure       auc 
+##      0.80      0.58      0.69      0.71
+coef(cvRidgeAuc)
+## 18 x 1 sparse Matrix of class "dgCMatrix"
+##                         1
+## (Intercept)  4.696790e-03
+## (Intercept)  .           
+## lc           3.256142e-04
+## idpyes       8.215360e-04
+## lpi         -8.661986e-07
+## fmde         1.482147e-04
+## physlimyes  -1.297421e-03
+## ndisease    -1.436901e-04
+## healthgood  -4.906006e-04
+## healthfair  -1.704258e-03
+## healthpoor  -1.903231e-03
+## linc        -4.185046e-04
+## lfam         1.267699e-03
+## educdec     -1.119974e-04
+## age         -5.941025e-05
+## sexfemale   -1.080033e-03
+## childyes     2.216203e-03
+## blackno      1.945253e-03
+fitting lasso L1 Norm
+
+lassoTrain=glmnet(trainIndependentVar,trainDependentVar,alpha = 1,lambda = Lgrid,family="binomial")
+plot.glmnet(lassoTrain,xvar="lambda",type,label=TRUE)
+
+
+lassoTrain$lambda[100]
+## [1] 0.01
+coef(lassoTrain)[,100]
+## (Intercept) (Intercept)          lc      idpyes         lpi        fmde 
+##  0.95019056  0.00000000  0.10121819  0.16838455 -0.01596930  0.00000000 
+##  physlimyes    ndisease  healthgood  healthfair  healthpoor        linc 
+## -0.23139217 -0.03774744 -0.06605197 -0.55409814 -0.14338533 -0.09226021 
+##        lfam     educdec         age   sexfemale    childyes     blackno 
+##  0.10038838 -0.01647802  0.00000000 -0.25360956  0.64308525  0.51419051
+predictTest=predict(lassoTrain,s = 0.01,newx =testIndependentVar,type = "response")
+confusionMetrics(target = testDependentVar,predicted =predictTest,threshold = 0.5,k = 18)
+##       AIC       BIC       TPR       TNR       FPR       FNR Precision 
+##   4215.48   4471.62      0.66      0.62      0.38      0.34      0.64 
+##       NPV  Accuracy  FMeasure       auc 
+##      0.65      0.64      0.65      0.71
+interpreting when lambda is large coefficients will be mostly zero when lambda is small coefficients will be close to least squares
+
+lassoTrain$lambda[100]
+## [1] 0.01
+coef(lassoTrain)[,100]
+## (Intercept) (Intercept)          lc      idpyes         lpi        fmde 
+##  0.95019056  0.00000000  0.10121819  0.16838455 -0.01596930  0.00000000 
+##  physlimyes    ndisease  healthgood  healthfair  healthpoor        linc 
+## -0.23139217 -0.03774744 -0.06605197 -0.55409814 -0.14338533 -0.09226021 
+##        lfam     educdec         age   sexfemale    childyes     blackno 
+##  0.10038838 -0.01647802  0.00000000 -0.25360956  0.64308525  0.51419051
+#1 norm calculation
+sum(coef(lassoTrain)[-(1:2),100])
+## [1] 0.1162747
+#large lambda
+lassoTrain$lambda[10]
+## [1] 811130831
+coef(lassoTrain)[,10]
+##  (Intercept)  (Intercept)           lc       idpyes          lpi 
+## -6.80879e-17  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00 
+##         fmde   physlimyes     ndisease   healthgood   healthfair 
+##  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00 
+##   healthpoor         linc         lfam      educdec          age 
+##  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00 
+##    sexfemale     childyes      blackno 
+##  0.00000e+00  0.00000e+00  0.00000e+00
+#l2 norm calculation
+coef(lassoTrain)[-(1:2),10]
+##         lc     idpyes        lpi       fmde physlimyes   ndisease 
+##          0          0          0          0          0          0 
+## healthgood healthfair healthpoor       linc       lfam    educdec 
+##          0          0          0          0          0          0 
+##        age  sexfemale   childyes    blackno 
+##          0          0          0          0
+cross validation using lasso 10 fold cross validation by default
+
+cvLassoDeviance=cv.glmnet(trainIndependentVar,trainDependentVar,family="binomial",
+                  alpha=1,nfolds = 10,type.measure="deviance")
+plot(cvLassoDeviance)
+
+
+cvLassoAuc=cv.glmnet(trainIndependentVar,trainDependentVar,family="binomial",
+                  alpha=1,nfolds = 10,type.measure="auc")
+plot.cv.glmnet(cvLassoAuc)
+ getting the best statistics to compute the error
+
+bestLambda=cvLassoAuc$lambda.1se
+summary(cvLassoAuc$lambda.1se)
+##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##  0.0273  0.0273  0.0273  0.0273  0.0273  0.0273
+pedictCV=predict.cv.glmnet(cvLassoAuc,s=bestLambda,
+                        newx = testIndependentVar,type = "response")
+confusionMetrics(target = testDependentVar,predicted =pedictCV,threshold = 0.5,k = 16)
+##       AIC       BIC       TPR       TNR       FPR       FNR Precision 
+##   4298.46   4526.14      0.66      0.61      0.39      0.34      0.63 
+##       NPV  Accuracy  FMeasure       auc 
+##      0.64      0.63      0.64      0.70
+lasso.coef=predict(cvLassoAuc ,type ="coefficients",s=bestLambda )[1:18,]
+coef(cvLassoAuc)
+## 18 x 1 sparse Matrix of class "dgCMatrix"
+##                       1
+## (Intercept)  0.27411590
+## (Intercept)  .         
+## lc           0.06448678
+## idpyes       0.02392238
+## lpi          .         
+## fmde         .         
+## physlimyes  -0.05313433
+## ndisease    -0.03342898
+## healthgood   .         
+## healthfair  -0.18833960
+## healthpoor   .         
+## linc        -0.03412118
+## lfam         .         
+## educdec      .         
+## age          .         
+## sexfemale   -0.11548614
+## childyes     0.58125890
+## blackno      0.37841215
+Model for the regression , ridge regression
+
+x=MedExp$med
+x=ifelse(MedExp$med>mean(MedExp$med),mean(MedExp$med),MedExp$med)
+independentVar=model.matrix(med~ndisease+age+sex+physlim+linc+health,data = MedExp)
+Lgrid=10^seq(10,-2,length=100)
+glmCVRidge=cv.glmnet(independentVar,x,alpha = 0,lambda = Lgrid)
+plot(glmCVRidge)
+
+
+glmCVRidge$lambda[100]
+## [1] 0.01
+bestLambda=glmCVRidge$lambda.min
+coef(glmCVRidge)[,bestLambda]
+## (Intercept) (Intercept)    ndisease         age   sexfemale  physlimyes 
+##   1.7247666   0.0000000   0.9953455   0.4713095   7.4860242   9.0953035 
+##        linc  healthgood  healthfair  healthpoor 
+##   2.9106196   3.1648188   8.2269432  17.9486824
+fitting models with step functions
+
+medPolyglm=glm(medCategory~age+lc+idp+idp+fmde+physlim+ndisease+health+linc+lfam+educdec+sex+child+black,
+               data=MedExp,subset =split[split==TRUE],family=binomial)
+predictActual=predict(medPolyglm,newdata =MedExpValid,type="response")
+table(MedExpValid$medCategory,predictActual>0.3)
+##    
+##     FALSE TRUE
+##   0   410 1262
+##   1   109 1563
+confusionMetrics(MedExpValid$medCategory,predictActual,threshold = 0.3,k = 19)
+##       AIC       BIC       TPR       TNR       FPR       FNR Precision 
+##   4162.69   4433.06      0.93      0.25      0.75      0.07      0.55 
+##       NPV  Accuracy  FMeasure       auc 
+##      0.79      0.59      0.70      0.71
